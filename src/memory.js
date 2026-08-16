@@ -42,17 +42,34 @@ export class MemoryStore {
     this.now = now;
   }
 
-  addMessage({ userId, role, content, tokens: tokenCount = 0, createdAt = null }) {
+  addMessage({
+    userId,
+    role,
+    content,
+    tokens: tokenCount = 0,
+    createdAt = null,
+    sourceKey = null,
+  }) {
     if (!new Set(["user", "assistant"]).has(role)) throw new TypeError("Invalid conversation role");
     if (typeof content !== "string" || !content.trim()) throw new TypeError("Message content is required");
     if (content.length > MAX_MESSAGE_CHARS) throw new TypeError("Message content is too large");
     if (!Number.isSafeInteger(tokenCount) || tokenCount < 0) throw new TypeError("Invalid token count");
     const timestamp = createdAt ?? isoNow(this.now);
     const result = this.db.prepare(`
-      INSERT INTO conversations (user_id, role, content, tokens, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(String(userId), role, content.trim(), tokenCount, timestamp);
-    return Number(result.lastInsertRowid);
+      INSERT OR IGNORE INTO conversations
+        (user_id, source_key, role, content, tokens, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(String(userId), sourceKey, role, content.trim(), tokenCount, timestamp);
+    if (result.changes) return Number(result.lastInsertRowid);
+    return this.findBySourceKey(sourceKey)?.id ?? null;
+  }
+
+  findBySourceKey(sourceKey) {
+    if (!sourceKey) return null;
+    return this.db.prepare(`
+      SELECT id, role, content, tokens, created_at AS createdAt
+      FROM conversations WHERE source_key = ?
+    `).get(String(sourceKey)) ?? null;
   }
 
   recent(userId, limit = 15) {
@@ -173,7 +190,11 @@ export function createSessionSummarizer({ model }) {
         maxTokens: 384,
         cache: true,
       });
-      return { ...parseSummary(response.text), usage: response.usage };
+      return {
+        ...parseSummary(response.text),
+        usage: response.usage,
+        budget: response.budget ?? null,
+      };
     },
   };
 }

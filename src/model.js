@@ -1,3 +1,5 @@
+import { ModelTokenBudget } from "./budget.js";
+
 const DEFAULT_ENDPOINT = "https://api.anthropic.com/v1/messages";
 
 export const DEFAULT_CLAUDE_MODELS = Object.freeze({
@@ -40,38 +42,63 @@ export function createAnthropicClient({
   fetchImpl = globalThis.fetch,
   endpoint = DEFAULT_ENDPOINT,
   models = DEFAULT_CLAUDE_MODELS,
+  countEndpoint = `${endpoint}/count_tokens`,
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl is required");
   if (!models?.haiku || !models?.sonnet) {
     throw new TypeError("Both haiku and sonnet model ids are required");
   }
 
+  function requestBody({ tier, system, messages, maxTokens = null, cache = true }) {
+    if (!Object.hasOwn(models, tier)) throw new TypeError(`Unknown model tier: ${tier}`);
+    const body = { model: models[tier], system, messages };
+    if (maxTokens !== null) body.max_tokens = maxTokens;
+    if (cache) body.cache_control = { type: "ephemeral" };
+    return body;
+  }
+
+  function headers() {
+    return {
+      "content-type": "application/json",
+      "anthropic-version": "2023-06-01",
+      "x-api-key": apiKey,
+    };
+  }
+
   return {
+    async countTokens({ tier, system, messages, cache = true }) {
+      if (!apiKey?.trim()) {
+        throw new ModelRequestError("ANTHROPIC_API_KEY is required for model-routed actions");
+      }
+      const response = await fetchImpl(countEndpoint, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(requestBody({ tier, system, messages, cache })),
+      });
+      if (!response.ok) {
+        throw new ModelRequestError(`Claude token count failed with status ${response.status}`, {
+          status: response.status,
+        });
+      }
+      const payload = await response.json();
+      if (!Number.isSafeInteger(payload.input_tokens) || payload.input_tokens < 0) {
+        throw new ModelRequestError("Claude token count returned an invalid value");
+      }
+      return payload.input_tokens;
+    },
+
     async generate({ tier, system, messages, maxTokens, cache = true }) {
       if (!apiKey?.trim()) {
         throw new ModelRequestError("ANTHROPIC_API_KEY is required for model-routed actions");
       }
-      if (!Object.hasOwn(models, tier)) throw new TypeError(`Unknown model tier: ${tier}`);
       if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) {
         throw new TypeError("maxTokens must be a positive safe integer");
       }
 
-      const body = {
-        model: models[tier],
-        max_tokens: maxTokens,
-        system,
-        messages,
-      };
-      if (cache) body.cache_control = { type: "ephemeral" };
-
       const response = await fetchImpl(endpoint, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "anthropic-version": "2023-06-01",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify(body),
+        headers: headers(),
+        body: JSON.stringify(requestBody({ tier, system, messages, maxTokens, cache })),
       });
 
       if (!response.ok) {
@@ -88,6 +115,29 @@ export function createAnthropicClient({
         model: payload.model ?? models[tier],
         stopReason: payload.stop_reason ?? null,
         usage: normalizeUsage(payload.usage),
+      };
+    },
+  };
+}
+
+export function createBudgetedModel({ model, budget }) {
+  if (!model || typeof model.countTokens !== "function" || typeof model.generate !== "function") {
+    throw new TypeError("A count-capable model client is required");
+  }
+  if (!(budget instanceof ModelTokenBudget)) throw new TypeError("A ModelTokenBudget is required");
+
+  return {
+    async generate(request) {
+      const inputTokens = await model.countTokens(request);
+      const reservedTokens = budget.reserveTokens(inputTokens + request.maxTokens);
+      const response = await model.generate(request);
+      return {
+        ...response,
+        budget: {
+          inputTokens,
+          maxOutputTokens: request.maxTokens,
+          reservedTokens,
+        },
       };
     },
   };

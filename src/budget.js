@@ -42,6 +42,13 @@ export class ModelTokenBudget {
   reserve(route) {
     const requested = MODEL_ROUTE_TOKEN_COST[route];
     if (!requested) throw new TypeError(`Route '${route}' is not model-routed`);
+    return this.reserveTokens(requested);
+  }
+
+  reserveTokens(requested) {
+    if (!Number.isSafeInteger(requested) || requested < 0) {
+      throw new TypeError("Requested tokens must be a non-negative safe integer");
+    }
     if (requested > this.remaining) {
       throw new BudgetExceededError({ requested, remaining: this.remaining });
     }

@@ -11,6 +11,7 @@ import { openDatabase } from "../src/db.js";
 import { MemoryStore, createSessionSummarizer } from "../src/memory.js";
 import { createAnthropicClient } from "../src/model.js";
 import { routeEvent } from "../src/router.js";
+import { StageThreeEventStore } from "../src/runtime_store.js";
 import { createStageThreeEngine } from "../src/stage3.js";
 
 const USAGE = { inputTokens: 20, outputTokens: 10, totalTokens: 30 };
@@ -61,6 +62,7 @@ function stageThreeServices({ db, model, sheets, now = () => new Date("2026-08-1
   const memory = new MemoryStore(db, { now });
   return {
     memory,
+    eventStore: new StageThreeEventStore(db, { now }),
     coach: createCoach({ model }),
     summarizer: createSessionSummarizer({ model }),
     extractionWorkflow: createExtractionWorkflow({

@@ -1,4 +1,4 @@
-import { BudgetExceededError, ModelTokenBudget } from "./budget.js";
+import { BudgetExceededError } from "./budget.js";
 import { routeEvent } from "./router.js";
 import { evaluateRules } from "./rules.js";
 
@@ -57,76 +57,88 @@ function usageTotal(...results) {
 export function createStageThreeEngine({
   stateProvider,
   asOfProvider,
-  budget,
   memory,
   coach,
   summarizer,
   extractionWorkflow,
   mediaResolver,
+  eventStore,
 }) {
   if (typeof stateProvider !== "function" || typeof asOfProvider !== "function") {
     throw new TypeError("stateProvider and asOfProvider are required");
   }
-  if (!(budget instanceof ModelTokenBudget)) throw new TypeError("A ModelTokenBudget is required");
-  if (!memory || !coach || !summarizer || !extractionWorkflow || !mediaResolver) {
+  if (!memory || !coach || !summarizer || !extractionWorkflow || !mediaResolver || !eventStore) {
     throw new TypeError("Stage 3 services are required");
   }
 
   async function summarize(userId) {
-    try {
-      budget.reserve("summarize");
-    } catch (error) {
-      if (error instanceof BudgetExceededError) return { status: "budget_skipped", usage: null };
-      throw error;
-    }
     try {
       const result = await summarizer.summarize({
         session: memory.getSession(userId),
         conversation: memory.recent(userId),
       });
       memory.setSession(userId, result);
-      return { status: "updated", usage: result.usage };
+      return { status: "updated", usage: result.usage, budget: result.budget };
     } catch (error) {
+      if (error instanceof BudgetExceededError) return { status: "budget_skipped", usage: null };
       return { status: "failed", usage: null, error: error.message };
     }
   }
 
-  async function recordDirectAnswer(userId, question, answer) {
+  function recordDirectAnswer(userId, question, answer, eventKey) {
     if (!userId) return;
-    memory.addMessage({ userId, role: "user", content: question });
-    memory.addMessage({ userId, role: "assistant", content: answer });
+    memory.addMessage({
+      userId,
+      role: "user",
+      content: question,
+      sourceKey: eventKey ? `${eventKey}:user` : null,
+    });
+    memory.addMessage({
+      userId,
+      role: "assistant",
+      content: answer,
+      sourceKey: eventKey ? `${eventKey}:assistant` : null,
+    });
   }
 
   return {
-    async handle(event) {
+    async handle(event, { eventKey = null } = {}) {
+      const cached = eventStore.get(eventKey);
+      if (cached) return cached;
+      const complete = (result) => eventStore.save(eventKey, result);
       const route = routeEvent(event);
       const userId = userIdFrom(event);
       const text = textFrom(event, route);
 
       if (route.handler === "query" && route.params.query === "days_since_run") {
         const answer = daysSinceRun(await stateProvider());
-        await recordDirectAnswer(userId, text, answer.text);
-        return { route, answer, tokenUsage: 0 };
+        recordDirectAnswer(userId, text, answer.text, eventKey);
+        return complete({ route, answer, tokenUsage: 0 });
       }
 
       if (route.handler === "query" && route.params.query === "conversation_search") {
         if (!userId) throw new TypeError("Conversation search requires a user id");
         const matches = memory.search(userId, route.params.text);
         const answer = { text: searchAnswer(matches), matches };
-        await recordDirectAnswer(userId, text, answer.text);
-        return { route, answer, tokenUsage: 0 };
+        recordDirectAnswer(userId, text, answer.text, eventKey);
+        return complete({ route, answer, tokenUsage: 0 });
       }
 
       if (route.handler === "extract") {
         if (!userId) throw new TypeError("Extraction requires a user id");
-        const reservedTokens = budget.reserve("extract");
         const images = await mediaResolver.resolve(event);
         const result = await extractionWorkflow.submit({
           userId,
           images,
           asOf: asOfProvider(),
+          eventKey,
         });
-        return { route, ...result, reservedTokens, tokenUsage: usageTotal(result) };
+        return complete({
+          route,
+          ...result,
+          reservedTokens: result.budget?.reservedTokens ?? 0,
+          tokenUsage: usageTotal(result),
+        });
       }
 
       if (route.handler === "update" && route.params.update === "confirm_extraction") {
@@ -135,52 +147,56 @@ export function createStageThreeEngine({
           userId,
           approved: true,
         });
-        return { route, ...result, tokenUsage: 0 };
+        return complete({ route, ...result, tokenUsage: 0 });
       }
 
       if (route.handler === "update" && route.params.update === "cancel_extraction") {
-        return { route, ...extractionWorkflow.cancel({
+        return complete({ route, ...extractionWorkflow.cancel({
           pendingId: route.params.pendingId,
           userId,
-        }), tokenUsage: 0 };
+        }), tokenUsage: 0 });
       }
 
       if (route.handler === "update") {
-        return { route, status: "routed", tokenUsage: 0 };
+        return complete({ route, status: "routed", tokenUsage: 0 });
       }
 
       if (!userId || !text) throw new TypeError("Chat requires a user id and text");
       const context = memory.context(userId);
-      memory.addMessage({ userId, role: "user", content: text });
+      memory.addMessage({
+        userId,
+        role: "user",
+        content: text,
+        sourceKey: eventKey ? `${eventKey}:user` : null,
+      });
       const state = await stateProvider();
       const verdict = route.params.workout
         ? evaluateRules({ state, workout: route.params.workout, counters: state.counters })
         : { verdict: "informational", ruleId: null, reason: "conversation" };
-      let reservedTokens = 0;
-      if (verdict.verdict !== "block") reservedTokens = budget.reserve("coach");
-      const response = await coach.respond({
-        verdict,
-        state,
-        memory: context,
-        userMessage: text,
-      });
+      const savedAnswer = memory.findBySourceKey(eventKey ? `${eventKey}:assistant` : null);
+      const response = savedAnswer
+        ? { text: savedAnswer.content, usage: null, budget: null, modelCalled: false }
+        : await coach.respond({ verdict, state, memory: context, userMessage: text });
       memory.addMessage({
         userId,
         role: "assistant",
         content: response.text,
         tokens: response.usage?.outputTokens ?? 0,
+        sourceKey: eventKey ? `${eventKey}:assistant` : null,
       });
       const session = verdict.verdict === "block"
         ? { status: "block_skipped", usage: null }
-        : await summarize(userId);
-      return {
+        : savedAnswer
+          ? { status: "retry_skipped", usage: null }
+          : await summarize(userId);
+      return complete({
         route,
         answer: { text: response.text },
-        reservedTokens,
+        reservedTokens: response.budget?.reservedTokens ?? 0,
         tokenUsage: usageTotal(response, session),
         sessionStatus: session.status,
         verdict,
-      };
+      });
     },
 
     async judgeAndCoach({ userId, workout, userMessage }) {
@@ -191,11 +207,14 @@ export function createStageThreeEngine({
       const verdict = evaluateRules({ state, workout, counters: state.counters });
       const context = memory.context(userId);
       memory.addMessage({ userId, role: "user", content: userMessage });
-      let reservedTokens = 0;
-      if (verdict.verdict !== "block") reservedTokens = budget.reserve("coach");
       const response = await coach.respond({ verdict, state, memory: context, userMessage });
       memory.addMessage({ userId, role: "assistant", content: response.text });
-      return { verdict, answer: response.text, reservedTokens, tokenUsage: usageTotal(response) };
+      return {
+        verdict,
+        answer: response.text,
+        reservedTokens: response.budget?.reservedTokens ?? 0,
+        tokenUsage: usageTotal(response),
+      };
     },
   };
 }

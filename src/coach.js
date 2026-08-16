@@ -69,7 +69,12 @@ export function createCoach({ model }) {
         cache: true,
       });
       if (!response.text?.trim()) throw new TypeError("Coach returned an empty response");
-      return { text: response.text.trim(), usage: response.usage, modelCalled: true };
+      return {
+        text: response.text.trim(),
+        usage: response.usage,
+        budget: response.budget ?? null,
+        modelCalled: true,
+      };
     },
   };
 }

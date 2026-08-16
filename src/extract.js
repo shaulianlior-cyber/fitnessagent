@@ -165,7 +165,11 @@ export function createWorkoutExtractor({ model }) {
         maxTokens: 1_024,
         cache: true,
       });
-      return { ...validateExtraction(parseJson(response.text), { asOf }), usage: response.usage };
+      return {
+        ...validateExtraction(parseJson(response.text), { asOf }),
+        usage: response.usage,
+        budget: response.budget ?? null,
+      };
     },
   };
 }
@@ -179,22 +183,54 @@ export function createExtractionWorkflow({ db, sheets, extractor, now = () => ne
     ).get(pendingId, String(userId));
   }
 
+  function resultFromRow(row) {
+    const missing = JSON.parse(row.missing_json);
+    const errors = JSON.parse(row.errors_json);
+    const metrics = row.usage_json ? JSON.parse(row.usage_json) : null;
+    const wrappedMetrics = metrics && Object.hasOwn(metrics, "usage");
+    return {
+      pendingId: row.id,
+      row: JSON.parse(row.row_json),
+      missing,
+      errors,
+      confidence: row.confidence,
+      usage: wrappedMetrics ? metrics.usage : metrics,
+      budget: wrappedMetrics ? metrics.budget ?? null : null,
+      canConfirm: errors.length === 0 && !missing.some((field) => REQUIRED_FIELDS.includes(field)),
+      status: row.status === "pending" ? "awaiting_confirmation" : row.status,
+    };
+  }
+
   return {
-    async submit({ userId, images, asOf }) {
+    async submit({ userId, images, asOf, eventKey = null }) {
+      if (eventKey) {
+        const existing = db.prepare(
+          "SELECT * FROM pending_extractions WHERE event_key = ?",
+        ).get(String(eventKey));
+        if (existing) return resultFromRow(existing);
+      }
       const result = await extractor.extract({ images, asOf });
       const createdAt = now().toISOString();
       const inserted = db.prepare(`
         INSERT INTO pending_extractions
-          (user_id, row_json, missing_json, errors_json, created_at)
-        VALUES (?, ?, ?, ?, ?)
+          (user_id, event_key, row_json, missing_json, errors_json,
+           confidence, usage_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         String(userId),
+        eventKey ? String(eventKey) : null,
         JSON.stringify(result.row),
         JSON.stringify(result.missing),
         JSON.stringify(result.errors),
+        result.confidence,
+        result.usage || result.budget
+          ? JSON.stringify({ usage: result.usage ?? null, budget: result.budget ?? null })
+          : null,
         createdAt,
       );
-      return { pendingId: Number(inserted.lastInsertRowid), ...result, status: "awaiting_confirmation" };
+      return resultFromRow(db.prepare(
+        "SELECT * FROM pending_extractions WHERE id = ?",
+      ).get(Number(inserted.lastInsertRowid)));
     },
 
     async confirm({ pendingId, userId, approved }) {

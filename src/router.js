@@ -14,6 +14,7 @@ function eventText(event) {
     event?.text ??
     event?.payload?.text ??
     event?.callback_query?.data ??
+    event?.update?.callback_query?.data ??
     event?.payload?.update?.callback_query?.data ??
     message?.text ??
     "";
@@ -82,9 +83,10 @@ function loadChangeIntent(text) {
 }
 
 function isTrainingDecisionRequest(text) {
-  const training = /(?:אימון|ריצה|לרוץ|עומס|מרחק|קצב|workout|run|load|mileage|distance|pace)/iu;
+  const training = /(?:אימון|ריצה|לרוץ|עומס|מרחק|קצב|מנוחה|אינטרוול|טמפו|workout|run|load|mileage|distance|pace|rest|interval|tempo)/iu;
   const decision = /(?:כדאי|מומלץ|המלצה|אפשר|מותר|מה\s+לעשות|תמליץ|האם|should|recommend|can\s+i|may\s+i|what\s+(?:should|do))/iu;
-  return training.test(text) && decision.test(text);
+  const planning = /(?:היום|מחר|השבוע|בשבוע\s+הבא|today|tomorrow|this\s+week|next\s+week)/iu;
+  return decision.test(text) && (training.test(text) || planning.test(text));
 }
 
 export function routeEvent(event) {

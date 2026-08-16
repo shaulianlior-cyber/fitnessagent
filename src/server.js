@@ -6,12 +6,14 @@ import { openDatabase } from "./db.js";
 import { createExtractionWorkflow, createWorkoutExtractor } from "./extract.js";
 import { createIngestor } from "./ingest.js";
 import { MemoryStore, createSessionSummarizer } from "./memory.js";
-import { createAnthropicClient, DEFAULT_CLAUDE_MODELS } from "./model.js";
+import { createAnthropicClient, createBudgetedModel, DEFAULT_CLAUDE_MODELS } from "./model.js";
 import { createStageThreeProcessor } from "./processor.js";
 import { PersistentQueue } from "./queue.js";
 import { rebuildDerivedState } from "./rebuild.js";
 import { createReadOnlySheets } from "./sheets.js";
 import { createStageThreeEngine } from "./stage3.js";
+import { OutboxStore, StageThreeEventStore } from "./runtime_store.js";
+import { createTelegramClient } from "./telegram.js";
 import { createTelegramMediaResolver } from "./telegram_media.js";
 import { createWebhookServer } from "./webhook.js";
 
@@ -30,13 +32,14 @@ const db = openDatabase(databasePath);
 const queue = new PersistentQueue(db);
 const sheets = createReadOnlySheets(fixturePath);
 const budget = new ModelTokenBudget();
-const model = createAnthropicClient({
+const anthropic = createAnthropicClient({
   apiKey: process.env.ANTHROPIC_API_KEY,
   models: {
     haiku: process.env.ANTHROPIC_HAIKU_MODEL ?? DEFAULT_CLAUDE_MODELS.haiku,
     sonnet: process.env.ANTHROPIC_SONNET_MODEL ?? DEFAULT_CLAUDE_MODELS.sonnet,
   },
 });
+const model = createBudgetedModel({ model: anthropic, budget });
 const memory = new MemoryStore(db);
 const coach = createCoach({ model });
 const summarizer = createSessionSummarizer({ model });
@@ -45,6 +48,9 @@ const extractionWorkflow = createExtractionWorkflow({ db, sheets, extractor });
 const mediaResolver = createTelegramMediaResolver({
   botToken: process.env.TELEGRAM_BOT_TOKEN,
 });
+const eventStore = new StageThreeEventStore(db);
+const outbox = new OutboxStore(db);
+const telegram = createTelegramClient({ botToken: process.env.TELEGRAM_BOT_TOKEN });
 const stateProvider = () => rebuildDerivedState({
   sheets,
   asOf: new Date().toISOString().slice(0, 10),
@@ -52,14 +58,14 @@ const stateProvider = () => rebuildDerivedState({
 const engine = createStageThreeEngine({
   stateProvider,
   asOfProvider: () => new Date().toISOString().slice(0, 10),
-  budget,
   memory,
   coach,
   summarizer,
   extractionWorkflow,
   mediaResolver,
+  eventStore,
 });
-const processor = createStageThreeProcessor({ engine });
+const processor = createStageThreeProcessor({ engine, outbox, telegram });
 const ingestor = createIngestor({ db, queue, albumWindowMs });
 const server = createWebhookServer({
   ingestor,

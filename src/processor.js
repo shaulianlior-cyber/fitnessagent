@@ -1,3 +1,5 @@
+import { chatIdFrom, outboundForResult } from "./runtime_store.js";
+
 export function createStageOneProcessor({ sheets, logger = console }) {
   if (!sheets) throw new TypeError("A read-only sheets adapter is required");
 
@@ -31,13 +33,27 @@ export function createStageTwoProcessor({ engine, logger = console }) {
   };
 }
 
-export function createStageThreeProcessor({ engine, logger = console }) {
+export function createStageThreeProcessor({ engine, outbox, telegram, logger = console }) {
   if (!engine || typeof engine.handle !== "function") {
     throw new TypeError("A Stage 3 engine is required");
   }
+  if (!outbox || !telegram || typeof telegram.sendMessage !== "function") {
+    throw new TypeError("Stage 3 outbox and Telegram client are required");
+  }
 
   return async function processStageThreeEvent(item) {
-    const result = await engine.handle(item.payload);
+    const eventKey = `queue:${item.id}`;
+    const result = await engine.handle(item.payload, { eventKey });
+    const outbound = outboundForResult(result);
+    if (outbound) {
+      const dedupeKey = `${eventKey}:message`;
+      outbox.enqueue({
+        dedupeKey,
+        chatId: chatIdFrom(item.payload),
+        ...outbound,
+      });
+      await outbox.deliver(dedupeKey, telegram);
+    }
     logger.info?.("processed stage-3 event", {
       queueId: item.id,
       route: result.route.handler,

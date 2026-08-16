@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ModelTokenBudget } from "./budget.js";
+import { PersistentDailyModelTokenBudget } from "./budget.js";
 import { createCoach } from "./coach.js";
 import { openDatabase } from "./db.js";
 import { createExtractionWorkflow, createWorkoutExtractor } from "./extract.js";
@@ -31,7 +31,7 @@ const webhookSecret = process.env.WEBHOOK_SECRET?.trim() ?? "";
 const db = openDatabase(databasePath);
 const queue = new PersistentQueue(db);
 const sheets = createReadOnlySheets(fixturePath);
-const budget = new ModelTokenBudget();
+const budget = new PersistentDailyModelTokenBudget(db);
 const anthropic = createAnthropicClient({
   apiKey: process.env.ANTHROPIC_API_KEY,
   models: {

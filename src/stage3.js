@@ -1,6 +1,14 @@
 import { BudgetExceededError } from "./budget.js";
+import { AmbiguousWriteError } from "./write_errors.js";
 import { routeEvent } from "./router.js";
 import { evaluateRules } from "./rules.js";
+import {
+  AMBIGUOUS_WRITE_TEXT,
+  BUDGET_EXHAUSTED_TEXT,
+  WRITE_UNAVAILABLE_TEXT,
+  budgetResponse,
+  memorySafeText,
+} from "./stage3_messages.js";
 
 function telegramMessage(event) {
   if (event?.kind === "album" || event?.payload?.kind === "album") {
@@ -96,7 +104,7 @@ export function createStageThreeEngine({
     memory.addMessage({
       userId,
       role: "assistant",
-      content: answer,
+      content: memorySafeText(answer),
       sourceKey: eventKey ? `${eventKey}:assistant` : null,
     });
   }
@@ -127,12 +135,24 @@ export function createStageThreeEngine({
       if (route.handler === "extract") {
         if (!userId) throw new TypeError("Extraction requires a user id");
         const images = await mediaResolver.resolve(event);
-        const result = await extractionWorkflow.submit({
-          userId,
-          images,
-          asOf: asOfProvider(),
-          eventKey,
-        });
+        let result;
+        try {
+          result = await extractionWorkflow.submit({
+            userId,
+            images,
+            asOf: asOfProvider(),
+            eventKey,
+          });
+        } catch (error) {
+          if (!(error instanceof BudgetExceededError)) throw error;
+          return complete({
+            route,
+            status: "budget_exhausted",
+            answer: { text: BUDGET_EXHAUSTED_TEXT },
+            reservedTokens: 0,
+            tokenUsage: 0,
+          });
+        }
         return complete({
           route,
           ...result,
@@ -142,19 +162,51 @@ export function createStageThreeEngine({
       }
 
       if (route.handler === "update" && route.params.update === "confirm_extraction") {
-        const result = await extractionWorkflow.confirm({
-          pendingId: route.params.pendingId,
-          userId,
-          approved: true,
-        });
+        let result;
+        try {
+          result = await extractionWorkflow.confirm({
+            pendingId: route.params.pendingId,
+            userId,
+            approved: true,
+          });
+        } catch (error) {
+          if (error?.writeOutcome === "not_written") {
+            return complete({
+              route,
+              status: "write_unavailable",
+              answer: { text: WRITE_UNAVAILABLE_TEXT },
+              pendingId: route.params.pendingId,
+              tokenUsage: 0,
+            });
+          }
+          if (!(error instanceof AmbiguousWriteError)) throw error;
+          return complete({
+            route,
+            status: "write_ambiguous",
+            answer: { text: AMBIGUOUS_WRITE_TEXT },
+            pendingId: error.pendingId,
+            tokenUsage: 0,
+          });
+        }
         return complete({ route, ...result, tokenUsage: 0 });
       }
 
       if (route.handler === "update" && route.params.update === "cancel_extraction") {
-        return complete({ route, ...extractionWorkflow.cancel({
-          pendingId: route.params.pendingId,
-          userId,
-        }), tokenUsage: 0 });
+        try {
+          return complete({ route, ...extractionWorkflow.cancel({
+            pendingId: route.params.pendingId,
+            userId,
+          }), tokenUsage: 0 });
+        } catch (error) {
+          if (!(error instanceof AmbiguousWriteError)) throw error;
+          return complete({
+            route,
+            status: "write_ambiguous",
+            answer: { text: AMBIGUOUS_WRITE_TEXT },
+            pendingId: error.pendingId,
+            tokenUsage: 0,
+          });
+        }
       }
 
       if (route.handler === "update") {
@@ -174,23 +226,34 @@ export function createStageThreeEngine({
         ? evaluateRules({ state, workout: route.params.workout, counters: state.counters })
         : { verdict: "informational", ruleId: null, reason: "conversation" };
       const savedAnswer = memory.findBySourceKey(eventKey ? `${eventKey}:assistant` : null);
-      const response = savedAnswer
-        ? { text: savedAnswer.content, usage: null, budget: null, modelCalled: false }
-        : await coach.respond({ verdict, state, memory: context, userMessage: text });
+      let budgetExhausted = false;
+      let response;
+      try {
+        response = savedAnswer
+          ? { text: savedAnswer.content, usage: null, budget: null, modelCalled: false }
+          : await coach.respond({ verdict, state, memory: context, userMessage: text });
+      } catch (error) {
+        if (!(error instanceof BudgetExceededError)) throw error;
+        budgetExhausted = true;
+        response = budgetResponse();
+      }
       memory.addMessage({
         userId,
         role: "assistant",
-        content: response.text,
+        content: memorySafeText(response.text),
         tokens: response.usage?.outputTokens ?? 0,
         sourceKey: eventKey ? `${eventKey}:assistant` : null,
       });
       const session = verdict.verdict === "block"
         ? { status: "block_skipped", usage: null }
+        : budgetExhausted
+          ? { status: "budget_skipped", usage: null }
         : savedAnswer
           ? { status: "retry_skipped", usage: null }
           : await summarize(userId);
       return complete({
         route,
+        ...(budgetExhausted ? { status: "budget_exhausted" } : {}),
         answer: { text: response.text },
         reservedTokens: response.budget?.reservedTokens ?? 0,
         tokenUsage: usageTotal(response, session),
@@ -207,11 +270,20 @@ export function createStageThreeEngine({
       const verdict = evaluateRules({ state, workout, counters: state.counters });
       const context = memory.context(userId);
       memory.addMessage({ userId, role: "user", content: userMessage });
-      const response = await coach.respond({ verdict, state, memory: context, userMessage });
-      memory.addMessage({ userId, role: "assistant", content: response.text });
+      let budgetExhausted = false;
+      let response;
+      try {
+        response = await coach.respond({ verdict, state, memory: context, userMessage });
+      } catch (error) {
+        if (!(error instanceof BudgetExceededError)) throw error;
+        budgetExhausted = true;
+        response = budgetResponse();
+      }
+      memory.addMessage({ userId, role: "assistant", content: memorySafeText(response.text) });
       return {
         verdict,
         answer: response.text,
+        ...(budgetExhausted ? { status: "budget_exhausted" } : {}),
         reservedTokens: response.budget?.reservedTokens ?? 0,
         tokenUsage: usageTotal(response),
       };

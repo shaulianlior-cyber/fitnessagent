@@ -6,6 +6,17 @@ function timestamp(now) {
   return value.toISOString();
 }
 
+export const TELEGRAM_TEXT_LIMIT = 4_096;
+
+function splitTelegramText(text) {
+  const characters = Array.from(text);
+  const chunks = [];
+  for (let index = 0; index < characters.length; index += TELEGRAM_TEXT_LIMIT) {
+    chunks.push(characters.slice(index, index + TELEGRAM_TEXT_LIMIT).join(""));
+  }
+  return chunks;
+}
+
 function outboxRow(row) {
   if (!row) return null;
   return {
@@ -139,4 +150,16 @@ export function outboundForResult(result) {
   if (result.status === "cancelled") return { text: "החילוץ בוטל ולא נכתב." };
   if (result.answer?.text) return { text: result.answer.text };
   return null;
+}
+
+export function outboundMessagesForResult(result) {
+  const outbound = outboundForResult(result);
+  if (!outbound) return [];
+  const chunks = splitTelegramText(outbound.text);
+  return chunks.map((text, index) => ({
+    text,
+    ...(index === chunks.length - 1 && outbound.replyMarkup
+      ? { replyMarkup: outbound.replyMarkup }
+      : {}),
+  }));
 }

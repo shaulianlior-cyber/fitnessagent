@@ -1,4 +1,5 @@
 const DEFAULT_API_ROOT = "https://api.telegram.org";
+const TELEGRAM_TEXT_LIMIT = 4_096;
 
 export class TelegramRequestError extends Error {
   constructor(message, { status = null } = {}) {
@@ -20,6 +21,9 @@ export function createTelegramClient({
       if (!botToken?.trim()) throw new TelegramRequestError("TELEGRAM_BOT_TOKEN is required");
       if (chatId === null || chatId === undefined || chatId === "" || !text?.trim()) {
         throw new TypeError("Telegram message requires a chat id and text");
+      }
+      if (Array.from(text.trim()).length > TELEGRAM_TEXT_LIMIT) {
+        throw new TypeError("Telegram message exceeds 4096 characters");
       }
       const body = { chat_id: String(chatId), text: text.trim() };
       if (replyMarkup) body.reply_markup = replyMarkup;

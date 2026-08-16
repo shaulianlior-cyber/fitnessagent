@@ -5,6 +5,7 @@ export class ReadOnlySheetsError extends Error {
   constructor(operation) {
     super(`Google Sheets write operation '${operation}' is disabled in local demo stages`);
     this.name = "ReadOnlySheetsError";
+    this.writeOutcome = "not_written";
   }
 }
 

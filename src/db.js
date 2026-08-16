@@ -67,6 +67,8 @@ const SCHEMA = `
     errors_json TEXT NOT NULL,
     confidence REAL,
     usage_json TEXT,
+    write_started_at TEXT,
+    write_error TEXT,
     status TEXT NOT NULL DEFAULT 'pending'
       CHECK (status IN ('pending', 'confirmed', 'cancelled')),
     created_at TEXT NOT NULL,
@@ -93,6 +95,12 @@ const SCHEMA = `
     error TEXT,
     created_at TEXT NOT NULL,
     sent_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS model_budget_daily (
+    day TEXT PRIMARY KEY,
+    used INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
+    updated_at TEXT NOT NULL
   );
 `;
 
@@ -121,6 +129,8 @@ export function openDatabase(filename = ":memory:") {
   ensureColumn(db, "pending_extractions", "event_key", "TEXT");
   ensureColumn(db, "pending_extractions", "confidence", "REAL");
   ensureColumn(db, "pending_extractions", "usage_json", "TEXT");
+  ensureColumn(db, "pending_extractions", "write_started_at", "TEXT");
+  ensureColumn(db, "pending_extractions", "write_error", "TEXT");
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS conversations_source_key_idx
       ON conversations(source_key) WHERE source_key IS NOT NULL;

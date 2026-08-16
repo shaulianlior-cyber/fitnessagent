@@ -1,4 +1,4 @@
-import { chatIdFrom, outboundForResult } from "./runtime_store.js";
+import { chatIdFrom, outboundMessagesForResult } from "./runtime_store.js";
 
 export function createStageOneProcessor({ sheets, logger = console }) {
   if (!sheets) throw new TypeError("A read-only sheets adapter is required");
@@ -44,9 +44,11 @@ export function createStageThreeProcessor({ engine, outbox, telegram, logger = c
   return async function processStageThreeEvent(item) {
     const eventKey = `queue:${item.id}`;
     const result = await engine.handle(item.payload, { eventKey });
-    const outbound = outboundForResult(result);
-    if (outbound) {
-      const dedupeKey = `${eventKey}:message`;
+    const outboundMessages = outboundMessagesForResult(result);
+    for (const [index, outbound] of outboundMessages.entries()) {
+      const dedupeKey = index === 0
+        ? `${eventKey}:message`
+        : `${eventKey}:message:${index}`;
       outbox.enqueue({
         dedupeKey,
         chatId: chatIdFrom(item.payload),

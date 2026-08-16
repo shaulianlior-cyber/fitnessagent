@@ -128,6 +128,12 @@ export function createBudgetedModel({ model, budget }) {
 
   return {
     async generate(request) {
+      if (!Number.isSafeInteger(request.maxTokens) || request.maxTokens <= 0) {
+        throw new TypeError("maxTokens must be a positive safe integer");
+      }
+      if (request.maxTokens > budget.remaining) {
+        budget.reserveTokens(request.maxTokens);
+      }
       const inputTokens = await model.countTokens(request);
       const reservedTokens = budget.reserveTokens(inputTokens + request.maxTokens);
       const response = await model.generate(request);

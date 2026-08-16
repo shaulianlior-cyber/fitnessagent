@@ -67,8 +67,8 @@ function historySearch(text) {
 
 function loadChangeIntent(text) {
   if (
-    /(?:להעלות|להגדיל|להגביר|להוסיף|תעלה|תגדיל|תגביר|תוסיף)\s+(?:את\s+)?(?:ה)?(?:עומס|מרחק|קילומטראז|קצב)/u.test(text) ||
-    /(?:increase|raise|add)\s+(?:the\s+|my\s+)?(?:load|mileage|distance|intensity)/iu.test(text) ||
+    /(?:להעלות|להגדיל|להגביר|להוסיף|תעלה|תגדיל|תגביר|תוסיף)\s+(?:את\s+|לי\s+)?(?:ה)?(?:עומס|מרחק|קילומטראז|קצב|קילומטר(?:ים)?)/u.test(text) ||
+    /(?:increase|raise|add)\s+(?:the\s+|my\s+)?(?:load|mileage|distance|intensity|kilometers?)/iu.test(text) ||
     /(?:run|workout)\s+(?:harder|faster|longer)/iu.test(text)
   ) return "increase";
   if (
@@ -84,9 +84,12 @@ function loadChangeIntent(text) {
 
 function isTrainingDecisionRequest(text) {
   const training = /(?:אימון|ריצה|לרוץ|עומס|מרחק|קצב|מנוחה|אינטרוול|טמפו|workout|run|load|mileage|distance|pace|rest|interval|tempo)/iu;
-  const decision = /(?:כדאי|מומלץ|המלצה|אפשר|מותר|מה\s+לעשות|תמליץ|האם|should|recommend|can\s+i|may\s+i|what\s+(?:should|do))/iu;
+  const decision = /(?:כדאי|מומלץ|המלצה|אפשר|מותר|מה\s+לעשות|תמליץ|האם|תבנה|תכנן|תן\s+לי|איזה|רוצה|should|recommend|can\s+i|may\s+i|what\s+(?:should|do)|build|plan|give\s+me|which|want)/iu;
   const planning = /(?:היום|מחר|השבוע|בשבוע\s+הבא|today|tomorrow|this\s+week|next\s+week)/iu;
-  return decision.test(text) && (training.test(text) || planning.test(text));
+  return (
+    (training.test(text) && (decision.test(text) || planning.test(text))) ||
+    (decision.test(text) && planning.test(text))
+  );
 }
 
 export function routeEvent(event) {

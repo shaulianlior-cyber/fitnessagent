@@ -1,3 +1,5 @@
+import { AmbiguousWriteError } from "./write_errors.js";
+
 const REQUIRED_FIELDS = ["Date", "Workout Type"];
 const TRI_STATE = new Set(["clean", "issue", null]);
 const SOURCE_FIELDS = new Set([
@@ -196,7 +198,13 @@ export function createExtractionWorkflow({ db, sheets, extractor, now = () => ne
       confidence: row.confidence,
       usage: wrappedMetrics ? metrics.usage : metrics,
       budget: wrappedMetrics ? metrics.budget ?? null : null,
-      canConfirm: errors.length === 0 && !missing.some((field) => REQUIRED_FIELDS.includes(field)),
+      canConfirm: row.status === "pending" &&
+        !row.write_started_at &&
+        errors.length === 0 &&
+        !missing.some((field) => REQUIRED_FIELDS.includes(field)),
+      writeState: row.status === "confirmed"
+        ? "confirmed"
+        : row.write_started_at ? "ambiguous" : "not_started",
       status: row.status === "pending" ? "awaiting_confirmation" : row.status,
     };
   }
@@ -237,6 +245,7 @@ export function createExtractionWorkflow({ db, sheets, extractor, now = () => ne
       if (approved !== true) throw new TypeError("Explicit approval is required before writing");
       const pending = getPending(pendingId, userId);
       if (!pending || pending.status !== "pending") throw new Error("Pending extraction is not available");
+      if (pending.write_started_at) throw new AmbiguousWriteError(pendingId);
       const errors = JSON.parse(pending.errors_json);
       if (errors.length) throw new Error("Extraction validation errors must be corrected before writing");
       const missing = JSON.parse(pending.missing_json);
@@ -244,9 +253,32 @@ export function createExtractionWorkflow({ db, sheets, extractor, now = () => ne
         throw new Error("Required extraction fields must be supplied before writing");
       }
       const row = JSON.parse(pending.row_json);
-      await sheets.write("Runs", row);
+      const startedAt = now().toISOString();
+      const claimed = db.prepare(`
+        UPDATE pending_extractions
+        SET write_started_at = ?, write_error = NULL
+        WHERE id = ? AND status = 'pending' AND write_started_at IS NULL
+      `).run(startedAt, pendingId);
+      if (claimed.changes !== 1) throw new AmbiguousWriteError(pendingId);
+      try {
+        await sheets.write("Runs", row, {
+          idempotencyKey: pending.event_key ?? `pending:${pendingId}`,
+        });
+      } catch (error) {
+        if (error?.writeOutcome === "not_written") {
+          db.prepare(`
+            UPDATE pending_extractions
+            SET write_started_at = NULL, write_error = ? WHERE id = ?
+          `).run(error.message, pendingId);
+          throw error;
+        }
+        db.prepare("UPDATE pending_extractions SET write_error = ? WHERE id = ?")
+          .run(error?.message ?? String(error), pendingId);
+        throw new AmbiguousWriteError(pendingId, { cause: error });
+      }
       db.prepare(`
-        UPDATE pending_extractions SET status = 'confirmed', resolved_at = ? WHERE id = ?
+        UPDATE pending_extractions
+        SET status = 'confirmed', resolved_at = ?, write_error = NULL WHERE id = ?
       `).run(now().toISOString(), pendingId);
       return { pendingId, status: "confirmed", row };
     },
@@ -254,6 +286,7 @@ export function createExtractionWorkflow({ db, sheets, extractor, now = () => ne
     cancel({ pendingId, userId }) {
       const pending = getPending(pendingId, userId);
       if (!pending || pending.status !== "pending") throw new Error("Pending extraction is not available");
+      if (pending.write_started_at) throw new AmbiguousWriteError(pendingId);
       db.prepare(`
         UPDATE pending_extractions SET status = 'cancelled', resolved_at = ? WHERE id = ?
       `).run(now().toISOString(), pendingId);

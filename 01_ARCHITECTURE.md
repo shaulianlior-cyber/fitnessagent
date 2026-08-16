@@ -133,7 +133,7 @@ OUT  הודעות יוצאות
 
 ### `sheets.js` — גישה לנתונים
 ```
-read(tab, range) / write(tab, row) / update(tab, rowId, fields)
+read(tab, range) / write(tab, row, { idempotencyKey }) / update(tab, rowId, fields)
 ```
 **השכבה היחידה שנוגעת בשיטס.** קריאת עמודות **לפי שם, לא לפי מיקום**.
 

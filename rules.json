@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "next_day_issue",
+      "type": "hard_block",
+      "priority": 10,
+      "condition": {
+        "all": [
+          { "field": "workout.loadChange", "op": "eq", "value": "increase" },
+          {
+            "any": [
+              { "field": "state.lastWorkout.nextDay.knee", "op": "eq", "value": "issue" },
+              { "field": "state.lastWorkout.nextDay.groin", "op": "eq", "value": "issue" },
+              { "field": "state.lastWorkout.nextDay.calfAchilles", "op": "eq", "value": "issue" }
+            ]
+          }
+        ]
+      },
+      "action": "block_load_increase",
+      "message_key": "next_day_issue",
+      "severity": "blocking"
+    },
+    {
+      "id": "next_day_required",
+      "type": "hard_block",
+      "priority": 20,
+      "condition": {
+        "all": [
+          { "field": "workout.loadChange", "op": "eq", "value": "increase" },
+          {
+            "any": [
+              { "field": "state.lastWorkout.nextDay.knee", "op": "is_missing" },
+              { "field": "state.lastWorkout.nextDay.groin", "op": "is_missing" },
+              { "field": "state.lastWorkout.nextDay.calfAchilles", "op": "is_missing" }
+            ]
+          }
+        ]
+      },
+      "action": "block_load_increase",
+      "message_key": "next_day_missing",
+      "severity": "blocking"
+    }
+  ]
+}

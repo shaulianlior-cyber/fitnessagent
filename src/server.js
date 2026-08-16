@@ -16,6 +16,7 @@ const fixturePath = resolve(
   process.env.DEMO_SHEETS_PATH ?? "data/demo-sheets.json",
 );
 const albumWindowMs = Number(process.env.ALBUM_WINDOW_MS ?? 2_000);
+const webhookSecret = process.env.WEBHOOK_SECRET?.trim() ?? "";
 
 const db = openDatabase(databasePath);
 const queue = new PersistentQueue(db);
@@ -26,10 +27,18 @@ const server = createWebhookServer({
   ingestor,
   queue,
   webhookPath: process.env.WEBHOOK_PATH ?? "/telegram/webhook",
-  secretToken: process.env.WEBHOOK_SECRET ?? "",
+  secretToken: webhookSecret,
 });
 
 queue.start(processor);
+if (!webhookSecret && process.env.NODE_ENV !== "test") {
+  console.error([
+    "!!!!!!!!!!!!!!!! WEBHOOK SECURITY WARNING !!!!!!!!!!!!!!!!",
+    "WEBHOOK_SECRET is empty: the Telegram webhook is completely open.",
+    "Set WEBHOOK_SECRET before exposing this server beyond local development.",
+    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+  ].join("\n"));
+}
 server.listen(port, host, () => {
   console.info(`stage-1 webhook listening on http://${host}:${port}`);
 });

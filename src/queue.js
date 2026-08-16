@@ -80,6 +80,34 @@ export class PersistentQueue {
         return queueRow(this.db.prepare("SELECT * FROM queue WHERE id = ?").get(existing.id));
       }
 
+      if (existing && isAlbum && existing.status !== "pending") {
+        const lateKey = `late:${mediaGroupId}:${rawEvent.updateId}`;
+        const latePayload = {
+          kind: "update",
+          update,
+          late: true,
+          lateArrivalFor: mediaGroupId,
+        };
+
+        const result = this.db.prepare(`
+          INSERT INTO queue(
+            event_id, dedupe_key, status, attempts, error,
+            payload, available_at, created_at, updated_at
+          ) VALUES (?, ?, 'pending', 0, NULL, ?, ?, ?, ?)
+        `).run(
+          rawEvent.id,
+          lateKey,
+          JSON.stringify(latePayload),
+          nowMs,
+          nowIso,
+          nowIso,
+        );
+
+        return queueRow(
+          this.db.prepare("SELECT * FROM queue WHERE id = ?").get(result.lastInsertRowid),
+        );
+      }
+
       if (existing) {
         return queueRow(existing);
       }

@@ -109,6 +109,50 @@ test("four photos in one media group become one delayed queue item", async () =>
   db.close();
 });
 
+test("a photo arriving after its album is claimed gets a separate queue item", () => {
+  let currentTime = 1_000;
+  const now = () => currentTime;
+  const db = openDatabase(":memory:");
+  const queue = new PersistentQueue(db, { now });
+  const ingestor = createIngestor({ db, queue, now, albumWindowMs: 2_000 });
+
+  ingestor.ingest(telegramUpdate(250, {
+    text: undefined,
+    media_group_id: "album-late",
+    photo: [{ file_id: "photo-first" }],
+  }));
+
+  currentTime = 3_000;
+  const album = queue.claimNext();
+  assert.equal(album.status, "processing");
+  assert.equal(album.payload.kind, "album");
+
+  const lateResult = ingestor.ingest(telegramUpdate(251, {
+    text: undefined,
+    media_group_id: "album-late",
+    photo: [{ file_id: "photo-late" }],
+  }));
+
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM raw_log").get().count, 2);
+  assert.equal(queue.count(), 2);
+  assert.equal(queue.count("processing"), 1);
+  assert.equal(queue.count("pending"), 1);
+  assert.notEqual(lateResult.queueId, album.id);
+
+  const lateItem = queue.getById(lateResult.queueId);
+  assert.equal(lateItem.dedupeKey, "late:album-late:251");
+  assert.equal(lateItem.payload.kind, "update");
+  assert.equal(lateItem.payload.update.update_id, 251);
+  assert.equal(lateItem.payload.late, true);
+  assert.equal(lateItem.payload.lateArrivalFor, "album-late");
+
+  queue.complete(album.id);
+  const claimedLateItem = queue.claimNext();
+  assert.equal(claimedLateItem.id, lateResult.queueId);
+  queue.complete(claimedLateItem.id);
+  db.close();
+});
+
 test("an item claimed before shutdown is recovered and processed after restart", async (t) => {
   const databasePath = temporaryDatabase(t);
   let db = openDatabase(databasePath);

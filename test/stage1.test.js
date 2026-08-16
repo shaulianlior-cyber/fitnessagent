@@ -177,6 +177,51 @@ test("an item claimed before shutdown is recovered and processed after restart",
   db.close();
 });
 
+test("restart recovery cannot exceed maxAttempts", async (t) => {
+  const databasePath = temporaryDatabase(t);
+  let currentTime = 1_000;
+  const now = () => currentTime;
+  let db = openDatabase(databasePath);
+  let queue = new PersistentQueue(db, { maxAttempts: 3, now, retryMs: 10 });
+  const ingestor = createIngestor({ db, queue, now });
+
+  ingestor.ingest(telegramUpdate(301));
+  for (let attempt = 1; attempt < 3; attempt += 1) {
+    const claimed = queue.claimNext();
+    assert.equal(claimed.attempts, attempt);
+    queue.fail(claimed, new Error(`failure ${attempt}`));
+    currentTime += 10;
+  }
+
+  const claimedFinalAttempt = queue.claimNext();
+  assert.equal(claimedFinalAttempt.attempts, 3);
+  assert.equal(claimedFinalAttempt.status, "processing");
+  db.close();
+
+  db = openDatabase(databasePath);
+  assert.equal(
+    db.prepare("SELECT status FROM queue WHERE id = ?").get(claimedFinalAttempt.id).status,
+    "processing",
+  );
+
+  queue = new PersistentQueue(db, { maxAttempts: 3, now });
+  const recovered = queue.getById(claimedFinalAttempt.id);
+  assert.equal(recovered.status, "failed");
+  assert.equal(recovered.attempts, 3);
+  assert.match(recovered.error, /Maximum attempts reached during restart recovery/);
+
+  // Also clean up state left pending by the older, unsafe recovery behavior.
+  db.prepare("UPDATE queue SET status = 'pending' WHERE id = ?")
+    .run(claimedFinalAttempt.id);
+  queue = new PersistentQueue(db, { maxAttempts: 3, now });
+  assert.equal(queue.getById(claimedFinalAttempt.id).status, "failed");
+
+  let processed = 0;
+  assert.equal(await queue.processOne(async () => { processed += 1; }), false);
+  assert.equal(processed, 0);
+  db.close();
+});
+
 test("webhook responds after durable enqueue without waiting for processing", async (t) => {
   const db = openDatabase(":memory:");
   const queue = new PersistentQueue(db, { pollMs: 10 });

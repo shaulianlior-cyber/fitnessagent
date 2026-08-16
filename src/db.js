@@ -46,17 +46,5 @@ export function openDatabase(filename = ":memory:") {
   }
   db.exec(SCHEMA);
 
-  // A process may have stopped after claiming an item. Requeue it on startup.
-  db.prepare(`
-    UPDATE queue
-       SET status = 'pending',
-           error = CASE
-             WHEN error IS NULL OR error = '' THEN 'Recovered after restart'
-             ELSE error
-           END,
-           updated_at = ?
-     WHERE status = 'processing'
-  `).run(new Date().toISOString());
-
   return db;
 }

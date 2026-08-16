@@ -1,0 +1,14 @@
+{
+  "name": "running-coach-agent-stage-1",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stage 1 local skeleton for durable Telegram ingestion. Google Sheets access is read-only and fixture-backed.",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

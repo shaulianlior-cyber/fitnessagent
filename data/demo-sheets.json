@@ -1,0 +1,19 @@
+{
+  "Runs": [
+    {
+      "Date": "2026-08-16",
+      "Workout Type": "Demo Run",
+      "Next-Day Knee": "",
+      "Next-Day Groin": "",
+      "Next-Day Calf-Achilles": "",
+      "Source": "import"
+    }
+  ],
+  "Splits": [],
+  "Goals": [
+    {
+      "Goal Name": "Demo 10K",
+      "Target Distance (km)": 10
+    }
+  ]
+}

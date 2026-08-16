@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 export class ReadOnlySheetsError extends Error {
   constructor(operation) {
-    super(`Google Sheets write operation '${operation}' is disabled in stage 1`);
+    super(`Google Sheets write operation '${operation}' is disabled in local demo stages`);
     this.name = "ReadOnlySheetsError";
   }
 }

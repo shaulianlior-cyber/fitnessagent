@@ -12,3 +12,21 @@ export function createStageOneProcessor({ sheets, logger = console }) {
     });
   };
 }
+
+export function createStageTwoProcessor({ engine, logger = console }) {
+  if (!engine || typeof engine.handle !== "function") {
+    throw new TypeError("A Stage 2 engine is required");
+  }
+
+  return async function processStageTwoEvent(item) {
+    const result = await engine.handle(item.payload);
+    logger.info?.("processed stage-2 event", {
+      queueId: item.id,
+      route: result.route.handler,
+      status: result.status ?? "answered",
+      answer: result.answer?.text ?? null,
+      tokenUsage: result.tokenUsage,
+    });
+    return result;
+  };
+}

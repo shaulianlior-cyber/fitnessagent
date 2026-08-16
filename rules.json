@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "load_change_required",
+      "type": "hard_block",
+      "priority": 1,
+      "condition": {
+        "field": "workout.loadChange",
+        "op": "is_missing"
+      },
+      "action": "block_unclassified_load",
+      "message_key": "load_change_missing",
+      "severity": "blocking"
+    },
+    {
+      "id": "load_change_invalid",
+      "type": "hard_block",
+      "priority": 2,
+      "condition": {
+        "field": "workout.loadChange",
+        "op": "not_in",
+        "value": ["increase", "maintain", "decrease"]
+      },
+      "action": "block_unclassified_load",
+      "message_key": "load_change_invalid",
+      "severity": "blocking"
+    },
+    {
+      "id": "next_day_issue",
+      "type": "hard_block",
+      "priority": 10,
+      "condition": {
+        "all": [
+          { "field": "workout.loadChange", "op": "eq", "value": "increase" },
+          {
+            "any": [
+              { "field": "state.lastWorkout.nextDay.knee", "op": "eq", "value": "issue" },
+              { "field": "state.lastWorkout.nextDay.groin", "op": "eq", "value": "issue" },
+              { "field": "state.lastWorkout.nextDay.calfAchilles", "op": "eq", "value": "issue" }
+            ]
+          }
+        ]
+      },
+      "action": "block_load_increase",
+      "message_key": "next_day_issue",
+      "severity": "blocking"
+    },
+    {
+      "id": "next_day_required",
+      "type": "hard_block",
+      "priority": 20,
+      "condition": {
+        "all": [
+          { "field": "workout.loadChange", "op": "eq", "value": "increase" },
+          {
+            "any": [
+              { "field": "state.lastWorkout.nextDay.knee", "op": "is_missing" },
+              { "field": "state.lastWorkout.nextDay.groin", "op": "is_missing" },
+              { "field": "state.lastWorkout.nextDay.calfAchilles", "op": "is_missing" }
+            ]
+          }
+        ]
+      },
+      "action": "block_load_increase",
+      "message_key": "next_day_missing",
+      "severity": "blocking"
+    }
+  ]
+}

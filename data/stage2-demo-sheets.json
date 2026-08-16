@@ -1,0 +1,57 @@
+{
+  "Runs": [
+    {
+      "Date": "2026-08-12",
+      "Workout Type": "Easy Run",
+      "Completed Activity": true,
+      "Next-Day Knee": "clean",
+      "Next-Day Groin": "clean",
+      "Next-Day Calf-Achilles": "clean",
+      "Knee Routine Done": false,
+      "Source": "import"
+    },
+    {
+      "Date": "2026-08-15",
+      "Workout Type": "Strength",
+      "Completed Activity": true,
+      "Next-Day Knee": "clean",
+      "Next-Day Groin": "clean",
+      "Next-Day Calf-Achilles": "clean",
+      "Knee Routine Done": true,
+      "Source": "import"
+    },
+    {
+      "Date": "2026-08-16",
+      "Workout Type": "Demo Run",
+      "Completed Activity": true,
+      "Next-Day Knee": "",
+      "Next-Day Groin": "",
+      "Next-Day Calf-Achilles": "",
+      "Knee Routine Done": false,
+      "Source": "import"
+    },
+    {
+      "Date": "2026-08-17",
+      "Workout Type": "Planned Run",
+      "Completed Activity": false,
+      "Next-Day Knee": "clean",
+      "Next-Day Groin": "clean",
+      "Next-Day Calf-Achilles": "clean",
+      "Knee Routine Done": true,
+      "Source": "import"
+    }
+  ],
+  "Weight Tracker": [
+    {
+      "Date": "2026-08-14",
+      "Weight": 78.4
+    }
+  ],
+  "Splits": [],
+  "Goals": [
+    {
+      "Goal Name": "Demo 10K",
+      "Target Distance (km)": 10
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 const DEFAULT_POLL_MS = 100;
 const DEFAULT_RETRY_MS = 250;
+const RESTART_RECOVERY_ERROR = "Recovered after restart";
+const MAX_ATTEMPTS_RECOVERY_ERROR =
+  "Maximum attempts reached during restart recovery";
 
 function parsePayload(value) {
   return typeof value === "string" ? JSON.parse(value) : value;
@@ -40,10 +43,52 @@ export class PersistentQueue {
     this.pollMs = options.pollMs ?? DEFAULT_POLL_MS;
     this.retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
     this.maxAttempts = options.maxAttempts ?? 3;
+    if (!Number.isSafeInteger(this.maxAttempts) || this.maxAttempts < 1) {
+      throw new RangeError("maxAttempts must be a positive safe integer");
+    }
     this.handler = null;
     this.timer = null;
     this.running = false;
     this.processing = false;
+    this.recoverInterruptedItems();
+  }
+
+  recoverInterruptedItems() {
+    const nowIso = new Date(this.now()).toISOString();
+
+    return transaction(this.db, () => {
+      const failed = this.db.prepare(`
+        UPDATE queue
+           SET status = 'failed',
+               error = CASE
+                 WHEN error IS NULL OR error = '' THEN ?
+                 ELSE error || char(10) || ?
+               END,
+               updated_at = ?
+         WHERE status IN ('pending', 'processing') AND attempts >= ?
+      `).run(
+        MAX_ATTEMPTS_RECOVERY_ERROR,
+        MAX_ATTEMPTS_RECOVERY_ERROR,
+        nowIso,
+        this.maxAttempts,
+      );
+
+      const requeued = this.db.prepare(`
+        UPDATE queue
+           SET status = 'pending',
+               error = CASE
+                 WHEN error IS NULL OR error = '' THEN ?
+                 ELSE error
+               END,
+               updated_at = ?
+         WHERE status = 'processing' AND attempts < ?
+      `).run(RESTART_RECOVERY_ERROR, nowIso, this.maxAttempts);
+
+      return {
+        failed: Number(failed.changes),
+        requeued: Number(requeued.changes),
+      };
+    });
   }
 
   enqueueUpdate({ rawEvent, update, mediaGroupId, albumWindowMs = 2_000 }) {
@@ -142,10 +187,10 @@ export class PersistentQueue {
       const row = this.db.prepare(`
         SELECT *
           FROM queue
-         WHERE status = 'pending' AND available_at <= ?
+         WHERE status = 'pending' AND attempts < ? AND available_at <= ?
          ORDER BY available_at ASC, id ASC
          LIMIT 1
-      `).get(this.now());
+      `).get(this.maxAttempts, this.now());
 
       if (!row) return null;
 

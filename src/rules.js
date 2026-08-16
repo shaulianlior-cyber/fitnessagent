@@ -22,6 +22,8 @@ function compare(value, condition) {
       return !isMissing(value);
     case "in":
       return Array.isArray(condition.value) && condition.value.includes(value);
+    case "not_in":
+      return Array.isArray(condition.value) && !condition.value.includes(value);
     case "gt":
       return value > condition.value;
     case "gte":

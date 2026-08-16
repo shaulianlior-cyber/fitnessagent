@@ -54,7 +54,10 @@ function hasWeight(row) {
 }
 
 export function deriveCounters({ runs = [], weightEntries = [] }, options = {}) {
-  const asOf = asUtcDateKey(options.asOf ?? new Date());
+  if (!Object.hasOwn(options, "asOf")) {
+    throw new TypeError("deriveCounters requires an explicit asOf date");
+  }
+  const asOf = asUtcDateKey(options.asOf);
   const lastRunDate = latestDate(runs, isRun, asOf);
   const lastKneeRoutineDate = latestDate(
     runs,

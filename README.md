@@ -21,6 +21,7 @@
 - מנוע כללים קשיח שבו טקסט משתמש אינו יכול לעקוף חסימת בטיחות
 - מונים ו־`rebuild` דטרמיניסטיים מנתוני הדמה בלבד
 - תקרת טוקנים שנאכפת בקוד לפני פעולה המנותבת למודל
+- מעבד runtime של שלב 2; נתיבי מודל מסומנים ומקבלים תקציב אך אינם קוראים למודל
 
 ## הרצה מקומית
 
@@ -44,7 +45,7 @@ $body = '{"update_id":1,"message":{"message_id":1,"from":{"id":123},"chat":{"id"
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/telegram/webhook -ContentType application/json -Body $body
 ```
 
-נתוני זמן הריצה נשמרים ב־`data/stage1.sqlite` ואינם נכנסים ל־Git.
+נתוני זמן הריצה נשמרים ב־`data/stage2.sqlite` ואינם נכנסים ל־Git.
 
 ## גבול Google Sheets
 

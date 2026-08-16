@@ -63,9 +63,12 @@ function workoutState(row) {
   };
 }
 
-export async function rebuildDerivedState({ sheets, asOf = new Date() }) {
+export async function rebuildDerivedState({ sheets, asOf }) {
   if (!sheets || typeof sheets.read !== "function") {
     throw new TypeError("rebuildDerivedState requires the Sheets adapter");
+  }
+  if (asOf === undefined) {
+    throw new TypeError("rebuildDerivedState requires an explicit asOf date");
   }
 
   const asOfDate = normalizeAsOf(asOf);

@@ -2,6 +2,31 @@
   "version": 1,
   "rules": [
     {
+      "id": "load_change_required",
+      "type": "hard_block",
+      "priority": 1,
+      "condition": {
+        "field": "workout.loadChange",
+        "op": "is_missing"
+      },
+      "action": "block_unclassified_load",
+      "message_key": "load_change_missing",
+      "severity": "blocking"
+    },
+    {
+      "id": "load_change_invalid",
+      "type": "hard_block",
+      "priority": 2,
+      "condition": {
+        "field": "workout.loadChange",
+        "op": "not_in",
+        "value": ["increase", "maintain", "decrease"]
+      },
+      "action": "block_unclassified_load",
+      "message_key": "load_change_invalid",
+      "severity": "blocking"
+    },
+    {
       "id": "next_day_issue",
       "type": "hard_block",
       "priority": 10,

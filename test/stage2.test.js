@@ -7,6 +7,7 @@ import {
   ModelTokenBudget,
 } from "../src/budget.js";
 import { deriveCounters } from "../src/counters.js";
+import { createStageTwoProcessor } from "../src/processor.js";
 import { rebuildDerivedState } from "../src/rebuild.js";
 import { routeEvent } from "../src/router.js";
 import { evaluateRules } from "../src/rules.js";
@@ -23,13 +24,9 @@ async function demoState(asOf = "2026-08-18") {
 
 test("days-since-run query returns immediately with zero model tokens", async () => {
   const state = await demoState();
-  let modelCalls = 0;
   const engine = createStageTwoEngine({
     stateProvider: async () => state,
     budget: new ModelTokenBudget(),
-    modelAction: async () => {
-      modelCalls += 1;
-    },
   });
 
   const result = await engine.handle({ text: "How many days since a run?" });
@@ -37,7 +34,6 @@ test("days-since-run query returns immediately with zero model tokens", async ()
   assert.equal(result.route.handler, "query");
   assert.equal(result.answer.value, 2);
   assert.equal(result.tokenUsage, 0);
-  assert.equal(modelCalls, 0);
 });
 
 test("router maps events without consulting rules or returning a verdict", () => {
@@ -88,6 +84,22 @@ test("adversarial user text cannot weaken or bypass a hard block", async () => {
   }
 });
 
+test("missing or invalid load classification fails closed", async () => {
+  const state = await demoState();
+  const cases = [
+    { workout: {}, ruleId: "load_change_required" },
+    { workout: { loadChange: "" }, ruleId: "load_change_required" },
+    { workout: { loadChange: "boost" }, ruleId: "load_change_invalid" },
+    { workout: { loadChange: "Increase" }, ruleId: "load_change_invalid" },
+  ];
+
+  for (const { workout, ruleId } of cases) {
+    const result = evaluateRules({ state, workout, counters: state.counters });
+    assert.equal(result.verdict, "block");
+    assert.equal(result.ruleId, ruleId);
+  }
+});
+
 test("hard blocks stop at the first matching priority", () => {
   const state = {
     lastWorkout: {
@@ -117,6 +129,18 @@ test("rebuild is deterministic for the same demo source", async () => {
   });
 });
 
+test("rebuild and counters reject a hidden wall-clock dependency", async () => {
+  const sheets = createReadOnlySheets(fixturePath);
+  await assert.rejects(
+    () => rebuildDerivedState({ sheets }),
+    /explicit asOf date/,
+  );
+  assert.throws(
+    () => deriveCounters({ runs: [], weightEntries: [] }),
+    /explicit asOf date/,
+  );
+});
+
 test("counters use completed source activity and ignore claims and plans", () => {
   const counters = deriveCounters({
     runs: [
@@ -144,19 +168,16 @@ test("counters use completed source activity and ignore claims and plans", () =>
 
 test("budget exhaustion blocks a model-routed action before its callback", async () => {
   const budget = new ModelTokenBudget(2_048);
-  let modelCalls = 0;
   const engine = createStageTwoEngine({
     stateProvider: demoState,
     budget,
-    modelAction: async () => {
-      modelCalls += 1;
-      return "demo";
-    },
   });
 
   const first = await engine.handle({ text: "נתח את האימון" });
-  assert.equal(first.tokenUsage, 2_048);
-  assert.equal(modelCalls, 1);
+  assert.equal(first.status, "model_required");
+  assert.equal(first.reservedTokens, 2_048);
+  assert.equal(first.tokenUsage, 0);
+  assert.equal(Object.hasOwn(first, "result"), false);
 
   await assert.rejects(
     () => engine.handle({
@@ -164,6 +185,34 @@ test("budget exhaustion blocks a model-routed action before its callback", async
     }),
     BudgetExceededError,
   );
-  assert.equal(modelCalls, 1);
   assert.equal(budget.remaining, 0);
+});
+
+test("Stage 2 engine judges workouts and runtime processor uses it", async () => {
+  const state = await demoState();
+  const engine = createStageTwoEngine({
+    stateProvider: async () => state,
+    budget: new ModelTokenBudget(),
+  });
+  const blocked = await engine.judge({ loadChange: "increase" });
+  assert.equal(blocked.ruleId, "next_day_required");
+
+  const logs = [];
+  const processor = createStageTwoProcessor({
+    engine,
+    logger: { info: (...args) => logs.push(args) },
+  });
+  const result = await processor({
+    id: 700,
+    payload: {
+      kind: "update",
+      update: { message: { text: "כמה ימים מאז הריצה?" } },
+    },
+  });
+
+  assert.equal(result.route.handler, "query");
+  assert.equal(result.answer.value, 2);
+  assert.equal(result.tokenUsage, 0);
+  assert.equal(logs[0][0], "processed stage-2 event");
+  assert.equal(logs[0][1].route, "query");
 });

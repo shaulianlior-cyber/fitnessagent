@@ -47,14 +47,3 @@ export class ModelTokenBudget {
     return requested;
   }
 }
-
-export async function runBudgetedModelAction({ budget, route, action }) {
-  if (!(budget instanceof ModelTokenBudget)) {
-    throw new TypeError("A ModelTokenBudget is required");
-  }
-  if (typeof action !== "function") throw new TypeError("A model action is required");
-
-  const reservedTokens = budget.reserve(route);
-  const result = await action({ maxTokens: reservedTokens });
-  return { result, tokenUsage: reservedTokens };
-}

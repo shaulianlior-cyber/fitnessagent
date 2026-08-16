@@ -1,5 +1,6 @@
-import { runBudgetedModelAction } from "./budget.js";
+import { ModelTokenBudget } from "./budget.js";
 import { routeEvent } from "./router.js";
+import { evaluateRules } from "./rules.js";
 
 function answerDaysSinceRun(state) {
   const days = state?.counters?.daysSinceRun;
@@ -13,15 +14,20 @@ function answerDaysSinceRun(state) {
   };
 }
 
-export function createStageTwoEngine({ stateProvider, budget, modelAction }) {
+export function createStageTwoEngine({ stateProvider, budget }) {
   if (typeof stateProvider !== "function") {
     throw new TypeError("A stateProvider is required");
   }
-  if (typeof modelAction !== "function") {
-    throw new TypeError("A modelAction boundary is required");
+  if (!(budget instanceof ModelTokenBudget)) {
+    throw new TypeError("A ModelTokenBudget is required");
   }
 
   return {
+    async judge(workout) {
+      const state = await stateProvider();
+      return evaluateRules({ state, workout, counters: state.counters });
+    },
+
     async handle(event) {
       const route = routeEvent(event);
 
@@ -37,12 +43,13 @@ export function createStageTwoEngine({ stateProvider, budget, modelAction }) {
         return { route, status: "routed", tokenUsage: 0 };
       }
 
-      const execution = await runBudgetedModelAction({
-        budget,
-        route: route.handler,
-        action: ({ maxTokens }) => modelAction(event, route, { maxTokens }),
-      });
-      return { route, ...execution };
+      const reservedTokens = budget.reserve(route.handler);
+      return {
+        route,
+        status: "model_required",
+        reservedTokens,
+        tokenUsage: 0,
+      };
     },
   };
 }

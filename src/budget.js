@@ -1,6 +1,8 @@
 export const MODEL_ROUTE_TOKEN_COST = Object.freeze({
   extract: 1_024,
   chat: 2_048,
+  coach: 6_144,
+  summarize: 1_024,
 });
 
 export const DEFAULT_MODEL_TOKEN_CEILING = 8_192;

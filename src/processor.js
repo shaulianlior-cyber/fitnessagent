@@ -30,3 +30,21 @@ export function createStageTwoProcessor({ engine, logger = console }) {
     return result;
   };
 }
+
+export function createStageThreeProcessor({ engine, logger = console }) {
+  if (!engine || typeof engine.handle !== "function") {
+    throw new TypeError("A Stage 3 engine is required");
+  }
+
+  return async function processStageThreeEvent(item) {
+    const result = await engine.handle(item.payload);
+    logger.info?.("processed stage-3 event", {
+      queueId: item.id,
+      route: result.route.handler,
+      status: result.status ?? "answered",
+      answer: result.answer?.text ?? null,
+      tokenUsage: result.tokenUsage,
+    });
+    return result;
+  };
+}

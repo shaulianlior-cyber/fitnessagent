@@ -1,9 +1,9 @@
 {
-  "name": "running-coach-agent-stage-2",
+  "name": "running-coach-agent-stage-3",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Stage 2 local routing and deterministic rules engine with fixture-backed, read-only Sheets data.",
+  "description": "Stage 3 local running coach with durable memory, validated screenshot extraction, and explicit write confirmation.",
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test"

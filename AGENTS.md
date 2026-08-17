@@ -65,8 +65,10 @@ Out of scope for the current safety gate:
 - `rebuild` produces the same derived state from the same demo source every time.
 - Budget accounting is enforced in code and cannot be raised by user text.
 - Stage 3 hard blocks never call the model; `coach.js` only phrases verdicts.
-- Unclassified workout or load requests fail closed through `rules.js`, while
-  explicitly recognized ordinary conversation may still use the model.
+- Requests for a future training decision or load change fail closed through
+  `rules.js`; reports, retrospective analysis, knowledge questions, and ordinary
+  conversation may still use the model. Do not implement this boundary as a
+  phrase allowlist.
 - Invalid tri-state values are not treated as `clean`.
 
 ## Current regression gates
@@ -83,7 +85,8 @@ The automated tests must prove all of the following:
 8. Stage 3 memory, extraction, confirmation, model-budget, outbox, and retry
    tests continue to pass.
 9. Free-form load requests and invalid tri-state values hard-block before any
-   model call, while ordinary conversation remains available.
+   model call, while varied reports, retrospective analysis, knowledge questions,
+   and ordinary conversation remain available.
 
 ## Verification and handoff
 

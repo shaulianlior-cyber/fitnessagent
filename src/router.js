@@ -82,11 +82,18 @@ function loadChangeIntent(text) {
   return null;
 }
 
-function isExplicitInformationalChat(text) {
+function isTrainingDecisionRequest(text) {
+  const training = /(?:אימון|ריצה|לרוץ|עומס|מרחק|קצב|מנוחה|אינטרוול|טמפו|זון|ק(?:"|״)?מ|קילומטר(?:ים)?|workout|run|load|mileage|distance|pace|rest|interval|tempo|zone|kilometers?)/iu;
+  const decision = /(?:כדאי|מומלץ|המלצה|מותר|מה\s+לעשות|תמליץ|תבנה|תכנן|תן\s+לי|איזה\s+(?:אימון|ריצה|מרחק|קצב)|רוצה\s+(?:לרוץ|לעשות)|האם\s+(?:אני\s+)?(?:יכול|כדאי|מותר|לעשות|לרוץ)|אפשר\s+(?:לי\s+)?(?:לעשות|לרוץ)|should|recommend|may\s+i|can\s+i|what\s+should|build|plan|give\s+me|which\s+(?:workout|run|distance|pace)|want\s+to\s+(?:run|train))/iu;
+  const planning = /(?:מחר|בהמשך|בפעם\s+הבאה|(?:ה)?(?:אימון|ריצה)\s+הבא(?:ה)?|השבוע|בשבוע\s+הבא|tomorrow|later|next\s+(?:time|workout|run|week)|this\s+week)/iu;
+  const proposal = /(?:בוא(?:ו)?\s+(?:נעשה|נרוץ|נתאמן|נעלה|נגדיל|נוסיף|נגביר|נשמור|נוריד|נפחית)|(?:אני\s+)?(?:אעשה|ארוץ)|נעשה|נרוץ|let'?s\s+(?:run|train|do)|i(?:'ll|\s+will)\s+(?:run|train|do))/iu;
+  const scheduled = /(?:אני\s+עושה|i(?:'m|\s+am)\s+(?:running|training|doing))/iu;
+  const approval = /(?:אוקיי|בסדר|מאשר|okay|ok|right)\s*[?？]?$/iu;
+
   return (
-    /^(?:מה\s+שלומך|שלום|היי|תודה|ממשיכים)[?!.\s]*$/iu.test(text) ||
-    /^(?:נתח|סכם|הסבר)(?:\s+לי)?\s+את\s+(?:ה)?(?:אימון|ריצה)[?!.\s]*$/u.test(text) ||
-    /^(?:analy[sz]e|summari[sz]e|explain)\s+(?:my\s+|the\s+)?(?:run|workout)[?!.\s]*$/iu.test(text)
+    (decision.test(text) && (training.test(text) || planning.test(text))) ||
+    (training.test(text) && proposal.test(text)) ||
+    (training.test(text) && planning.test(text) && (scheduled.test(text) || approval.test(text)))
   );
 }
 
@@ -119,7 +126,7 @@ export function routeEvent(event) {
   const loadChange = loadChangeIntent(text);
   const workout = loadChange
     ? { loadChange }
-    : isExplicitInformationalChat(text) ? null : {};
+    : isTrainingDecisionRequest(text) ? {} : null;
   return {
     handler: "chat",
     params: workout ? { text, workout } : { text },

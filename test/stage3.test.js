@@ -364,12 +364,28 @@ test("free-form load requests fail closed before any model call", async () => {
   db.close();
 });
 
-test("ordinary conversation still reaches the model", async () => {
+test("varied reports, questions and conversation still reach the model", async () => {
   const db = openDatabase(":memory:");
-  const model = queuedModel([
-    "שלומי טוב.",
-    JSON.stringify({ summary: "שיחת חולין", openItems: [] }),
-  ]);
+  const messages = [
+    "מה שלומך",
+    "בוקר טוב",
+    "תודה רבה!",
+    "היה לי כאב קל בברך אתמול",
+    'רצתי היום 3 ק"מ, הרגשתי מצוין',
+    "מה זה בכלל זון 2?",
+    "נתח לי את האימון של אתמול",
+    'הבוקר שקלתי 78.4 ק"ג',
+    "ישנתי שבע שעות הלילה",
+    "הדופק הממוצע בריצה היה 145",
+    "למה הקצב שלי ירד בסוף הריצה?",
+    "הברך מרגישה נקייה היום",
+    "בוא נדבר על הריצה של אתמול",
+    "אני עושה אימון קל בכל יום",
+  ];
+  const model = queuedModel(messages.flatMap((_, index) => [
+    `תגובה ${index + 1}`,
+    JSON.stringify({ summary: `סיכום ${index + 1}`, openItems: [] }),
+  ]));
   const services = stageThreeServices({
     db,
     model,
@@ -382,11 +398,12 @@ test("ordinary conversation still reaches the model", async () => {
     ...services,
   });
 
-  const result = await engine.handle({ text: "מה שלומך", userId: "57" });
-
-  assert.equal(result.verdict.verdict, "informational");
-  assert.equal(result.answer.text, "שלומי טוב.");
-  assert.equal(model.calls.length, 2);
+  for (const [index, text] of messages.entries()) {
+    const result = await engine.handle({ text, userId: "57" });
+    assert.equal(result.verdict.verdict, "informational", text);
+    assert.equal(result.answer.text, `תגובה ${index + 1}`, text);
+  }
+  assert.equal(model.calls.length, messages.length * 2);
   db.close();
 });
 

@@ -27,6 +27,41 @@
       "severity": "blocking"
     },
     {
+      "id": "next_day_value_invalid",
+      "type": "hard_block",
+      "priority": 5,
+      "condition": {
+        "all": [
+          { "field": "workout.loadChange", "op": "eq", "value": "increase" },
+          {
+            "any": [
+              {
+                "all": [
+                  { "field": "state.lastWorkout.nextDay.knee", "op": "is_not_missing" },
+                  { "field": "state.lastWorkout.nextDay.knee", "op": "not_in", "value": ["clean", "issue"] }
+                ]
+              },
+              {
+                "all": [
+                  { "field": "state.lastWorkout.nextDay.groin", "op": "is_not_missing" },
+                  { "field": "state.lastWorkout.nextDay.groin", "op": "not_in", "value": ["clean", "issue"] }
+                ]
+              },
+              {
+                "all": [
+                  { "field": "state.lastWorkout.nextDay.calfAchilles", "op": "is_not_missing" },
+                  { "field": "state.lastWorkout.nextDay.calfAchilles", "op": "not_in", "value": ["clean", "issue"] }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "action": "block_load_increase",
+      "message_key": "next_day_issue",
+      "severity": "blocking"
+    },
+    {
       "id": "next_day_issue",
       "type": "hard_block",
       "priority": 10,

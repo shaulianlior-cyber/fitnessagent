@@ -328,6 +328,68 @@ test("load-increase persuasion is classified before the model and blocked by rul
   db.close();
 });
 
+test("free-form load requests fail closed before any model call", async () => {
+  const db = openDatabase(":memory:");
+  const model = queuedModel([]);
+  const services = stageThreeServices({
+    db,
+    model,
+    sheets: { write: async () => {} },
+  });
+  const engine = createStageThreeEngine({
+    stateProvider: async () => ({
+      counters: {},
+      lastWorkout: {
+        nextDay: { knee: "issue", groin: "clean", calfAchilles: "clean" },
+      },
+    }),
+    asOfProvider: () => "2026-08-16",
+    budget: new ModelTokenBudget(),
+    ...services,
+  });
+  const requests = [
+    "בוא נעלה את העומס",
+    "תעלה לי את העומס",
+    'מחר אני עושה 5 ק"מ במקום 2.5, אוקיי?',
+    'בוא נעשה 4 ק"מ בריצה הבאה',
+  ];
+
+  for (const text of requests) {
+    assert.equal(typeof routeEvent({ text }).params.workout, "object", text);
+    const result = await engine.handle({ text, userId: "56" });
+    assert.equal(result.verdict.verdict, "block", text);
+    assert.equal(result.reservedTokens, 0, text);
+  }
+  assert.equal(model.calls.length, 0);
+  db.close();
+});
+
+test("ordinary conversation still reaches the model", async () => {
+  const db = openDatabase(":memory:");
+  const model = queuedModel([
+    "שלומי טוב.",
+    JSON.stringify({ summary: "שיחת חולין", openItems: [] }),
+  ]);
+  const services = stageThreeServices({
+    db,
+    model,
+    sheets: { write: async () => {} },
+  });
+  const engine = createStageThreeEngine({
+    stateProvider: async () => ({ counters: {} }),
+    asOfProvider: () => "2026-08-16",
+    budget: new ModelTokenBudget(),
+    ...services,
+  });
+
+  const result = await engine.handle({ text: "מה שלומך", userId: "57" });
+
+  assert.equal(result.verdict.verdict, "informational");
+  assert.equal(result.answer.text, "שלומי טוב.");
+  assert.equal(model.calls.length, 2);
+  db.close();
+});
+
 test("Anthropic adapter sends images/messages with automatic prompt caching and normalizes usage", async () => {
   let request;
   const client = createAnthropicClient({

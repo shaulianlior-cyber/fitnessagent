@@ -115,6 +115,23 @@ test("hard blocks stop at the first matching priority", () => {
   assert.equal(result.ruleId, "next_day_issue");
 });
 
+test("an invalid tri-state value hard-blocks a load increase", () => {
+  const state = {
+    lastWorkout: {
+      nextDay: { knee: "probably fine", groin: "clean", calfAchilles: "clean" },
+    },
+  };
+  const result = evaluateRules({
+    state,
+    workout: { loadChange: "increase" },
+    counters: {},
+  });
+
+  assert.equal(result.verdict, "block");
+  assert.equal(result.ruleId, "next_day_value_invalid");
+  assert.equal(result.severity, "blocking");
+});
+
 test("rebuild is deterministic for the same demo source", async () => {
   const sheets = createReadOnlySheets(fixturePath);
   const first = await rebuildDerivedState({ sheets, asOf: "2026-08-18" });

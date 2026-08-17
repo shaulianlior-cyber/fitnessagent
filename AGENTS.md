@@ -33,26 +33,27 @@ request. Do not start a later build stage unless the user explicitly requests it
 - Keep each source file at or below 300 lines.
 - Do not add production dependencies without explicit user approval.
 
-## Current scope — Stage 2 only
+## Current scope — pre-Stage 4 safety gate
 
-Implement only:
+Stages 1–3 are implemented on `main`:
 
-- `router.js`
-- `rules.js`
-- `rules.json`
-- deterministic counters
-- `rebuild` from the local demo Sheets adapter
-- a deterministic model/token budget ceiling
+- Stage 1: durable ingest, raw log, serial queue, webhook, and local demo Sheets adapter.
+- Stage 2: router, deterministic rules and counters, deterministic `rebuild`, and
+  a model/token budget ceiling.
+- Stage 3: coach, durable memory, screenshot extraction, explicit confirmation,
+  Telegram delivery, prompt caching, and durable daily budget enforcement.
 
-Out of scope for Stage 2:
+Current work is limited to reviewed safety fixes in the Stage 1–3 implementation.
+Do not begin Stage 4 without a separate explicit request.
 
-- `coach.js`, `memory.js`, and `extract.js`
-- OCR, screenshots, prompt caching, or any model call
-- `proactive.js`, cron, deployment, or Telegram registration
-- live Google Sheets reads or writes
-- loading the real domain rules and historical patterns; that belongs to Stage 5
+Out of scope for the current safety gate:
 
-## Stage 2 required behavior
+- `proactive.js`, cron, deployment, or Telegram registration;
+- live Google Sheets reads or writes;
+- loading real domain rules and historical patterns, which belongs to Stage 5;
+- any new Stage 4 behavior.
+
+## Current required behavior
 
 - `router.js` maps an event to `query`, `update`, `extract`, or `chat` without
   consulting rules or deciding a verdict.
@@ -63,8 +64,14 @@ Out of scope for Stage 2:
 - “Days since run” is answered immediately with zero model/token usage.
 - `rebuild` produces the same derived state from the same demo source every time.
 - Budget accounting is enforced in code and cannot be raised by user text.
+- Stage 3 hard blocks never call the model; `coach.js` only phrases verdicts.
+- Requests for a future training decision or load change fail closed through
+  `rules.js`; reports, retrospective analysis, knowledge questions, and ordinary
+  conversation may still use the model. Do not implement this boundary as a
+  phrase allowlist.
+- Invalid tri-state values are not treated as `clean`.
 
-## Stage 2 exit tests
+## Current regression gates
 
 The automated tests must prove all of the following:
 
@@ -75,6 +82,11 @@ The automated tests must prove all of the following:
 5. Counters derive from completed activity, not conversational claims.
 6. Budget exhaustion prevents a model-routed action before any model call.
 7. All Stage 1 regression tests continue to pass.
+8. Stage 3 memory, extraction, confirmation, model-budget, outbox, and retry
+   tests continue to pass.
+9. Free-form load requests and invalid tri-state values hard-block before any
+   model call, while varied reports, retrospective analysis, knowledge questions,
+   and ordinary conversation remain available.
 
 ## Verification and handoff
 
@@ -92,11 +104,10 @@ At the end of every session:
 - Update `CHANGELOG.md` only when observable behavior changes.
 - Keep the work on a focused branch and publish it through a reviewable PR.
 
-## Later gate
+## Completed gate
 
-Before Stage 3, address the reviewed poison-pill / `maxAttempts` recovery risk in
-`db.js`. Do not pull that fix into Stage 2 unless the user explicitly changes
-the stage boundary.
+The reviewed poison-pill / `maxAttempts` recovery risk was fixed before Stage 3.
+Keep its recovery and final-attempt regression tests passing.
 
 ## Code review rules
 
@@ -106,6 +117,6 @@ Treat these as high-priority findings:
 - any path that turns missing state into `clean`;
 - any bypass of a hard block through user-controlled text;
 - direct data access outside `sheets.js`;
-- a live Sheets connection or write path added during Stage 2;
+- a live Sheets connection or write path added during the current safety gate;
 - nondeterministic rebuilds, counters, or budget enforcement;
 - loss of raw events or violations of serial queue processing.

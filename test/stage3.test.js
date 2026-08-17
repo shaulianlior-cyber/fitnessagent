@@ -328,6 +328,85 @@ test("load-increase persuasion is classified before the model and blocked by rul
   db.close();
 });
 
+test("free-form load requests fail closed before any model call", async () => {
+  const db = openDatabase(":memory:");
+  const model = queuedModel([]);
+  const services = stageThreeServices({
+    db,
+    model,
+    sheets: { write: async () => {} },
+  });
+  const engine = createStageThreeEngine({
+    stateProvider: async () => ({
+      counters: {},
+      lastWorkout: {
+        nextDay: { knee: "issue", groin: "clean", calfAchilles: "clean" },
+      },
+    }),
+    asOfProvider: () => "2026-08-16",
+    budget: new ModelTokenBudget(),
+    ...services,
+  });
+  const requests = [
+    "בוא נעלה את העומס",
+    "תעלה לי את העומס",
+    'מחר אני עושה 5 ק"מ במקום 2.5, אוקיי?',
+    'בוא נעשה 4 ק"מ בריצה הבאה',
+  ];
+
+  for (const text of requests) {
+    assert.equal(typeof routeEvent({ text }).params.workout, "object", text);
+    const result = await engine.handle({ text, userId: "56" });
+    assert.equal(result.verdict.verdict, "block", text);
+    assert.equal(result.reservedTokens, 0, text);
+  }
+  assert.equal(model.calls.length, 0);
+  db.close();
+});
+
+test("varied reports, questions and conversation still reach the model", async () => {
+  const db = openDatabase(":memory:");
+  const messages = [
+    "מה שלומך",
+    "בוקר טוב",
+    "תודה רבה!",
+    "היה לי כאב קל בברך אתמול",
+    'רצתי היום 3 ק"מ, הרגשתי מצוין',
+    "מה זה בכלל זון 2?",
+    "נתח לי את האימון של אתמול",
+    'הבוקר שקלתי 78.4 ק"ג',
+    "ישנתי שבע שעות הלילה",
+    "הדופק הממוצע בריצה היה 145",
+    "למה הקצב שלי ירד בסוף הריצה?",
+    "הברך מרגישה נקייה היום",
+    "בוא נדבר על הריצה של אתמול",
+    "אני עושה אימון קל בכל יום",
+  ];
+  const model = queuedModel(messages.flatMap((_, index) => [
+    `תגובה ${index + 1}`,
+    JSON.stringify({ summary: `סיכום ${index + 1}`, openItems: [] }),
+  ]));
+  const services = stageThreeServices({
+    db,
+    model,
+    sheets: { write: async () => {} },
+  });
+  const engine = createStageThreeEngine({
+    stateProvider: async () => ({ counters: {} }),
+    asOfProvider: () => "2026-08-16",
+    budget: new ModelTokenBudget(),
+    ...services,
+  });
+
+  for (const [index, text] of messages.entries()) {
+    const result = await engine.handle({ text, userId: "57" });
+    assert.equal(result.verdict.verdict, "informational", text);
+    assert.equal(result.answer.text, `תגובה ${index + 1}`, text);
+  }
+  assert.equal(model.calls.length, messages.length * 2);
+  db.close();
+});
+
 test("Anthropic adapter sends images/messages with automatic prompt caching and normalizes usage", async () => {
   let request;
   const client = createAnthropicClient({

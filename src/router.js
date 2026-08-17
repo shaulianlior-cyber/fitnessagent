@@ -67,7 +67,7 @@ function historySearch(text) {
 
 function loadChangeIntent(text) {
   if (
-    /(?:להעלות|להגדיל|להגביר|להוסיף|תעלה|תגדיל|תגביר|תוסיף)\s+(?:את\s+|לי\s+)?(?:ה)?(?:עומס|מרחק|קילומטראז|קצב|קילומטר(?:ים)?)/u.test(text) ||
+    /(?:להעלות|להגדיל|להגביר|להוסיף|תעלה|תגדיל|תגביר|תוסיף|נעלה|נגדיל|נגביר|נוסיף)\s+(?:(?:את|לי)\s+){0,2}(?:ה)?(?:עומס|מרחק|קילומטראז|קצב|קילומטר(?:ים)?)/u.test(text) ||
     /(?:increase|raise|add)\s+(?:the\s+|my\s+)?(?:load|mileage|distance|intensity|kilometers?)/iu.test(text) ||
     /(?:run|workout)\s+(?:harder|faster|longer)/iu.test(text)
   ) return "increase";
@@ -83,12 +83,17 @@ function loadChangeIntent(text) {
 }
 
 function isTrainingDecisionRequest(text) {
-  const training = /(?:אימון|ריצה|לרוץ|עומס|מרחק|קצב|מנוחה|אינטרוול|טמפו|workout|run|load|mileage|distance|pace|rest|interval|tempo)/iu;
-  const decision = /(?:כדאי|מומלץ|המלצה|אפשר|מותר|מה\s+לעשות|תמליץ|האם|תבנה|תכנן|תן\s+לי|איזה|רוצה|should|recommend|can\s+i|may\s+i|what\s+(?:should|do)|build|plan|give\s+me|which|want)/iu;
-  const planning = /(?:היום|מחר|השבוע|בשבוע\s+הבא|today|tomorrow|this\s+week|next\s+week)/iu;
+  const training = /(?:אימון|ריצה|לרוץ|עומס|מרחק|קצב|מנוחה|אינטרוול|טמפו|זון|ק(?:"|״)?מ|קילומטר(?:ים)?|workout|run|load|mileage|distance|pace|rest|interval|tempo|zone|kilometers?)/iu;
+  const decision = /(?:כדאי|מומלץ|המלצה|מותר|מה\s+לעשות|תמליץ|תבנה|תכנן|תן\s+לי|איזה\s+(?:אימון|ריצה|מרחק|קצב)|רוצה\s+(?:לרוץ|לעשות)|האם\s+(?:אני\s+)?(?:יכול|כדאי|מותר|לעשות|לרוץ)|אפשר\s+(?:לי\s+)?(?:לעשות|לרוץ)|should|recommend|may\s+i|can\s+i|what\s+should|build|plan|give\s+me|which\s+(?:workout|run|distance|pace)|want\s+to\s+(?:run|train))/iu;
+  const planning = /(?:מחר|בהמשך|בפעם\s+הבאה|(?:ה)?(?:אימון|ריצה)\s+הבא(?:ה)?|השבוע|בשבוע\s+הבא|tomorrow|later|next\s+(?:time|workout|run|week)|this\s+week)/iu;
+  const proposal = /(?:בוא(?:ו)?\s+(?:נעשה|נרוץ|נתאמן|נעלה|נגדיל|נוסיף|נגביר|נשמור|נוריד|נפחית)|(?:אני\s+)?(?:אעשה|ארוץ)|נעשה|נרוץ|let'?s\s+(?:run|train|do)|i(?:'ll|\s+will)\s+(?:run|train|do))/iu;
+  const scheduled = /(?:אני\s+עושה|i(?:'m|\s+am)\s+(?:running|training|doing))/iu;
+  const approval = /(?:אוקיי|בסדר|מאשר|okay|ok|right)\s*[?？]?$/iu;
+
   return (
-    (training.test(text) && (decision.test(text) || planning.test(text))) ||
-    (decision.test(text) && planning.test(text))
+    (decision.test(text) && (training.test(text) || planning.test(text))) ||
+    (training.test(text) && proposal.test(text)) ||
+    (training.test(text) && planning.test(text) && (scheduled.test(text) || approval.test(text)))
   );
 }
 
